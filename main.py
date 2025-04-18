@@ -6,6 +6,8 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import os, json, base64
 import firebase_admin
 from firebase_admin import credentials, firestore, initialize_app
+from linebot.models import TextSendMessage
+
 
 app = Flask(__name__)
 
@@ -296,20 +298,32 @@ club_mapping = {
   }
 }
 
+
 @app.route("/callback", methods=["GET"])
 def handle_qr_callback():
     code = request.args.get("code")
-    if not code:
-        return "❌ 請提供有效 code 參數"
+    user_id = request.args.get("user_id")  # ⚠️ 你要從 QR 或 cookie 拿到 user_id
+
+    if not code or not user_id:
+        return "❌ 請提供 code 與 user_id"
 
     if code == "entry_start":
-        return "🎉 歡迎參加社評觀摩任務！掃描各攤位 QR Code，集滿 5 點可兌換獎品 🎁"
+        line_bot_api.push_message(
+            user_id,
+            TextSendMessage(text="🎉 歡迎參加社評觀摩集點任務！開始掃碼集點吧～")
+        )
+        return "✅ 已發送歡迎訊息到 LINE"
 
-    club = club_mapping.get(code)
-    if club:
-        return f"✅ 你已參觀【{club['name']}】（{club['type']}）"
-    else:
-        return "❌ 無效的 QR Code，請洽工作人員"
+    # 其他社團
+    if code in club_mapping:
+        club = club_mapping[code]
+        line_bot_api.push_message(
+            user_id,
+            TextSendMessage(text=f"✅ 你已參觀【{club['name']}】（{club['type']}）")
+        )
+        return "✅ 已發送參觀訊息"
+    
+    return "❌ 無效的 QR code"
 
 @app.route("/callback", methods=['POST'])
 def callback():
