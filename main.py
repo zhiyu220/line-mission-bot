@@ -297,13 +297,19 @@ club_mapping = {
 }
 
 @app.route("/callback", methods=["GET"])
-def handle_qr_scan():
+def handle_qr_callback():
     code = request.args.get("code")
-    if code in club_mapping:
-        club = club_mapping[code]
-        return f"✅ 你已成功參觀【{club['name']}】（{club['type']}）"
+    if not code:
+        return "❌ 請提供有效 code 參數"
+
+    if code == "entry_start":
+        return "🎉 歡迎參加社評觀摩任務！掃描各攤位 QR Code，集滿 5 點可兌換獎品 🎁"
+
+    club = club_mapping.get(code)
+    if club:
+        return f"✅ 你已參觀【{club['name']}】（{club['type']}）"
     else:
-        return "❌ 無效的 QR Code"
+        return "❌ 無效的 QR Code，請洽工作人員"
 
 @app.route("/callback", methods=['POST'])
 def callback():
