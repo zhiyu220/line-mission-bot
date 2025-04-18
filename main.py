@@ -1,46 +1,69 @@
-from flask import Flask, request
+# LINE Bot - Flask 基礎架構設定
+from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
+import os
 import firebase_admin
 from firebase_admin import credentials, firestore
-from dotenv import load_dotenv
-import os
 
-# 載入 .env
-load_dotenv()
+app = Flask(__name__)
 
 # 初始化 Firebase
-cred = credentials.Certificate("firebase_config.json")
+cred = credentials.Certificate("firebase_key.json")
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# 初始化 LINE Bot
-app = Flask(__name__)
-line_bot_api = LineBotApi(os.getenv("LINE_CHANNEL_ACCESS_TOKEN"))
-handler = WebhookHandler(os.getenv("LINE_CHANNEL_SECRET"))
+# 環境變數（來自 Railway 或 .env）
+CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+
+line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(CHANNEL_SECRET)
+
+# 社團對照表（代替資料庫簡化版）
+club_mapping = {
+    "a8f2XjL9zQ": {"name": "吉他社", "type": "康樂性"},
+    "entry_start": {"name": "入口說明", "type": "entry"}
+    # ... 其他亂碼對照
+}
 
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
-    handler.handle(body, signature)
+    try:
+        handler.handle(body, signature)
+    except InvalidSignatureError:
+        abort(400)
     return 'OK'
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_id = event.source.user_id
-    text = event.message.text.strip().upper()
+    text = event.message.text.strip()
 
-    if text.startswith("TASK_"):  # 任務代碼，如 TASK_GUITAR
-        club_id = text.split("_")[1]
-        ref = db.collection("points").document(f"{user_id}_{club_id}")
-        if ref.get().exists:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage("你已完成這個社團任務囉！"))
+    if text.startswith("code:"):
+        code = text.split(":")[1]
+        if code in club_mapping:
+            club = club_mapping[code]
+            if club['type'] == "entry":
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text="🎉 歡迎參加社評觀摩任務！掃描不同社團 QR 集點，集滿 5 點可得兌換券！")
+                )
+                return
+
+            # 加入 Firebase 記錄邏輯...（略）
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=f"✅ 你已成功參觀【{club['name']}】（{club['type']}）")
+            )
         else:
-            ref.set({"point": 1})
-            # 計算目前總點數
-            total = len([doc.id for doc in db.collection("points").where("user_id", "==", user_id).stream()])
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(f"✅ 完成 {club_id} 任務，已獲得 1 點！目前總點數：{total} 點"))
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="❌ 無效的 QR Code 請重新掃描")
+            )
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5050)
+    app.run()
