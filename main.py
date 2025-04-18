@@ -296,6 +296,15 @@ club_mapping = {
   }
 }
 
+@app.route("/callback", methods=["GET"])
+def handle_qr_scan():
+    code = request.args.get("code")
+    if code in club_mapping:
+        club = club_mapping[code]
+        return f"✅ 你已成功參觀【{club['name']}】（{club['type']}）"
+    else:
+        return "❌ 無效的 QR Code"
+
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
@@ -322,7 +331,27 @@ def handle_message(event):
                 )
                 return
 
-            # 加入 Firebase 記錄邏輯...（略）
+            user_ref = db.collection("users").document(user_id)
+
+            user_data = user_ref.get().to_dict() or {}
+            points = user_data.get("points", {})
+            completed = user_data.get("completed", {})
+
+            club_type = club["type"]
+            visited_count = points.get(club_type, 0)
+
+            if visited_count < 5:
+                points[club_type] = visited_count + 1
+                user_ref.set({"points": points}, merge=True)
+
+            reply = f"✅ 你已成功參觀【{club['name']}】（{club['type']}）\n目前進度：{points[club_type]}/5 點"
+
+            # 滿點觸發卡片
+            if points[club_type] == 5 and not completed.get(club_type):
+                completed[club_type] = True
+                user_ref.set({"completed": completed}, merge=True)
+                reply += f"\n🎉 恭喜完成「{club_type}」任務！已獲得兌換券！"
+
             line_bot_api.reply_message(
                 event.reply_token,
                 TextSendMessage(text=f"✅ 你已成功參觀【{club['name']}】（{club['type']}）")
@@ -334,4 +363,4 @@ def handle_message(event):
             )
 
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
