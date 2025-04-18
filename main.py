@@ -3,15 +3,18 @@ from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-import os
+import os, json, base64
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, initialize_app
 
 app = Flask(__name__)
 
 # 初始化 Firebase
-cred = credentials.Certificate("firebase_key.json")
-firebase_admin.initialize_app(cred)
+firebase_json = base64.b64decode(os.getenv("FIREBASE_CREDENTIALS_BASE64")).decode("utf-8")
+cred_dict = json.loads(firebase_json)
+cred = credentials.Certificate(cred_dict)
+initialize_app(cred)
+
 db = firestore.client()
 
 # 環境變數（來自 Railway 或 .env）
